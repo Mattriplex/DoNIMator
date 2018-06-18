@@ -6,11 +6,11 @@ numPlayers = 2
 
 def play_human(rows):
     row = int(input("Choose a row. (0 to %d)\n" % (len(rows) - 1)))
-    while row < 0 or row >= len(rows):
-        row = int(input("Try another one. (0 to %d)\n" % (len(rows) - 1)))
+    while row < 0 or row >= len(rows) or rows[row] == 0:
+        row = int(input("Try another one. (0 to %d, no empty rows)\n" % (len(rows) - 1)))
     print(rows[row])
-    num = int(input("How many matches would you like to take?\n"))
-    while num < 1 or num > 3 or num > rows[row]:
+    num = int(input("How many matches would you like to take? (1 to %d)\n" % nimMax))
+    while num < 1 or num > min(nimMax, rows[row]):
         num = int(input("Try again?\n"))
     return row, num
 
@@ -21,25 +21,39 @@ def play_random(rows):
         row = randint(0, len(rows) - 1)
     if rows[row] == 1:
         return row, 1
-    return row, randint(1, min(3, rows[row]))
+    return row, randint(1, min(nimMax, rows[row]))
 
 
 def play_perfect(rows):
-    # first, map the game state onto the cyclic N^kxk tensor, where k = nimMax + 1
-    lrows = [val % (nimMax+1) for val in rows]
+    # count non zero rows
+    nonzeroes =  len(rows) - rows.count(0)
     # zip with index for later, sort in ascending order
-    lrows = sorted([val for val in enumerate(lrows)])
+    lrows = sorted([(val, idx) for (idx, val) in enumerate(rows)])
+    # then, map the game state onto the cyclic N^kxk tensor, where k = nimMax + 1
+    lrows = [(val % (nimMax + 1), idx) for (val, idx) in lrows]
+
     # determine tensor index
     idx = tensor_index(lrows)
     if idx == 0:
-        return lrows[-1][0], 1  # this is a losing position, take the minimal amount to prolong game
+        return lrows[-1][1], 1  # this is a losing position, take the minimal amount to prolong game
     else:
-        return lrows[-1][0], idx  # this is a winning position, move opponent to losing position
+        failctr = 0
+        while rows[lrows[-1][1]] < idx:  # if the row doesn't allow the perfect play, rotate rows
+            if failctr == nonzeroes:
+                break
+            
+            failctr += 1
+
+        return lrows[-1][1], idx  # this is a winning position, move opponent to losing position
 
 
 def tensor_index(vals):
+    # remove zeroes from list
+    nzvals = [(val, idx) for (val, idx) in vals if val != 0]
     idx = 0
-
+    while len(nzvals) > 0:
+        idx = (idx + nzvals[0][0]) % (nimMax + 1)
+        del nzvals[0]
     return idx
 
 
@@ -48,8 +62,11 @@ def game_round(rows, players, verbose):
         if all(row == 0 for row in rows):
             return idx  # player lost, return their ID
         row, num = playFunction(tuple(rows))  # players get a tuple so they don't mess with game state
-        if num < 1 or num > 3 or num > rows[row]:
-            raise ValueError("Invalid row/number combination! (row")
+        if row < 0 or row >= len(rows):
+            raise ValueError("Invalid row index! (%d)" % row)
+        if num < 1 or num > min(nimMax, rows[row]):
+            raise ValueError("Invalid number of matches! (can take at most %d, but player wants to take %d)" % (
+                min(nimMax, rows[row]), num))
         rows[row] -= num
         if verbose > 0:
             print("Player %d took %d matches from %d:" % (idx, num, row))
@@ -77,4 +94,3 @@ if __name__ == '__main__':
     players = [playerList[int(p)] for p in input(
         "Choose players (type on same line separated by spaces):\n0: Random\n1: Human\n2: Perfect AI\n").split()]
     loser = game_play(rows, players, verbose=1)
-
